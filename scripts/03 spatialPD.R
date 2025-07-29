@@ -1,7 +1,7 @@
 ######################################################################
 ### The script is used to investigate the impact of spatial distribution ----
 # of drug on the pharmacodynamics with imipenem as an example ----
-# y.guo@lacdr.leidenuniv.nl - March 2024
+# y.guo@lacdr.leidenuniv.nl - July 2025
 ######################################################################
 rm(list = ls(all = TRUE))
 
@@ -28,11 +28,11 @@ source("functions/pde_pkpd_emax.R") ## PDE function (elimination)
 ii <- rep(6,6) # unit: hour
 dur <- c(0.5, 0.5, 0.5, 6, 6, 6) # unit: hour
 type_name <- rep(c("intermittent infusion", "continuous infusion"), each = 3)
-amt <- rep(c(900,1000,1100),2)
+amt <- rep(c(250,500,1000),2)
 
-dose_name <- rep(c("dose = 900mg",
-                   "dose = 1000mg",
-                   "dose = 1100mg"),2)
+dose_name <- rep(c("dose = 250mg",
+                   "dose = 500mg",
+                   "dose = 1000mg"),2)
 
 dosing <- as.data.frame(cbind(ii, dur, type_name, amt, dose_name))
 dosing
@@ -79,9 +79,9 @@ for (i in 1:6) {
          cmt = 1,
          dur = dur_ok*60,
          ii = ii_ok*60,  
-         addl = 72/ii_ok - 1) %>% # addl = 72/ii - 1 for small molecule, addl =0 for antibody
+         addl = 72/ii_ok - 1) %>% 
       # sampling events
-      et(seq(from = 0, to = 72*60, by = 1)) %>% #previously observe to = 72*60, now change it to 24hour
+      et(seq(from = 0, to = 72*60, by = 1)) %>% 
       as_tibble()
     
     ## Simulate plasma PK
@@ -200,24 +200,22 @@ for (m in 1:3) {
     condition <- cfu_baseline[[m]]
     
     dat.pk.mucus <- pde(db.pk = 0.444*dat.pk.plasma$Con1, # plasma PK
-                        coef.diff = 114 , # diffusion coefficient um^2/sec        
-                        kon = 1000 , # binding rate /(M*sec)   
+                        coef.diff = Diffusion_coeff(1, vis(2e-5)) , # diffusion coefficient um^2/sec
+                        kon = 100 , # binding rate /(M*sec)   
                         koff = 0.1, # unbinding rate /sec
-                        Tmucin = 2e-4,# concentration of total mucin mol/L
+                        Tmucin = 2e-5,# concentration of total mucin mol/L
                         dt = 0.5, # step size time in seconds
-                        span.t = 72, # observation time span in hours 
+                        span.t = 72, # observation time span in hours #previously observe to = 72*60, no chang it to 24hour
                         dx = 25, # step size depth in um
                         span.x = 500, # observation depth span in um
-                        clr = 0.00001,# elimination rate in 1/s
+                        clr = 0,# elimination rate in 1/s
                         pd.bl =condition, # baseline structure of pathogen
-                        kgs = 0.000262, # natural growth rate of Sensitive population of bacteria (s-1)
-                        kgr = 0.000489, # natural growth rate of Resistant population of bacteria (s-1)
-                        ksr = 5.05e-08 , # transfer rate (s-1)
-                        Emaxs = 0.00258, # maximal killing rate for sensitive species (s-1)
-                        EC50s = 19.1, # killing rate for sensitive species
-                        hills = 0.285, # killing rate for sensitive species
-                        slopeR = 7.75e-05, # killing rate for resistant species
-                        Bmax = 10^9.42) # maximum bacteria count (CFU/mL)        
+                        kgs = 1.67e-4, # natural growth rate of Sensitive population of bacteria (s-1)
+                        kgr = 0, # natural growth rate of Resistant population of bacteria (s-1)
+                        ksr = 9.86e-6 , # transfer rate (s-1)
+                        slopeS = 2.38e-4, # killing rate for resistant species
+                        slopeR = 3.78e-5, # killing rate for resistant species
+                        Bmax = 10^9.52) # maximum bacteria count (CFU/mL)             
     
     dat.pk.mucus.ok <- dat.pk.mucus %>% 
       rename(Conc_F = CONC_FREE) %>% 
@@ -227,6 +225,7 @@ for (m in 1:3) {
              LogS = log10(Sensitive),
              LogR = log10(Resistant),
              LogBact = log10(Sensitive + Resistant),
+             Bact = Sensitive + Resistant,
              Pattern = patterns[m],
              feature = unique(dat.pk.plasma$feature),
              description = unique(dat.pk.plasma$description))  
@@ -239,10 +238,31 @@ for (m in 1:3) {
     listdata[[k]] <- dat.pk.mucus.ok
     
     
+    # to calculate the cv
+    input_data <- dat.pk.mucus.ok[-1,] %>%
+      group_by(TIME) %>%
+      summarise(
+        CV_F = ifelse(mean(Conc_F, na.rm = TRUE) == 0, NA_real_, 
+                      100 * sd(Conc_F, na.rm = TRUE) / mean(Conc_F, na.rm = TRUE)),
+        CV_B = ifelse(mean(Conc_B, na.rm = TRUE) == 0, NA_real_, 
+                      100 * sd(Conc_B, na.rm = TRUE) / mean(Conc_B, na.rm = TRUE)),
+        CV_S = ifelse(mean(Sensitive, na.rm = TRUE) == 0, NA_real_, 
+                      100 * sd(Sensitive, na.rm = TRUE) / mean(Sensitive, na.rm = TRUE)),
+        CV_R = ifelse(mean(Resistant, na.rm = TRUE) == 0, NA_real_, 
+                      100 * sd(Resistant, na.rm = TRUE) / mean(Resistant, na.rm = TRUE)),
+        CV_T = ifelse(mean(Bact, na.rm = TRUE) == 0, NA_real_, 
+                      100 * sd(Bact, na.rm = TRUE) / mean(Bact, na.rm = TRUE))
+      ) %>% 
+      mutate(Pattern = patterns[m],
+             feature = unique(dat.pk.plasma$feature),
+             description = unique(dat.pk.plasma$description))  
+    
+    listdata_CV[[k]] <- input_data
+    
     list_dosing[[m]][i, c("sum_bact","sum_concf")] <-
-      c(log10(sum(10^(dat.pk.mucus.ok$LogBact))),
+      c(sum(dat.pk.mucus.ok$Bact),
         sum(dat.pk.mucus.ok$Conc_F))
-
+    
     
     end_time <- Sys.time()
     
@@ -330,16 +350,7 @@ figure5 <- ggarrange(pcfu_plots[[1]], pcfu_plots[[3]],
                      nrow = 2, ncol = 1,
                      font.label = list(size = 18))
 figure5 
-# save the plot
-ggsave("figure/figure5.pdf", plot = figure5, width = 16, height = 18, units = "cm", device = cairo_pdf) 
-ggsave("figure/figure5.tiff", plot = figure5, width = 18, height = 20, units = "cm",dpi=600)
 
-figure5_supple_decrease <- pcfu_plots[[2]]
-ggsave("figure/figure5_supple_decrease.pdf", plot = figure5_supple_decrease, width = 16, height = 9, units = "cm", device = cairo_pdf) 
-ggsave("figure/figure5_supple_decrease.tiff", plot = figure5_supple_decrease, width = 18, height = 9, units = "cm",dpi=600)
-# 1 homogeneous
-# 2 Decreasing\ngradient
-# 3 Increasing\ngradient
 
 # save the data
 save(file = "result/f5_spatialPD.Rdata", listdata)
@@ -375,7 +386,6 @@ alldata_sp_sum %>%
         legend.key.width = unit(0.01, "npc"),
         strip.text = element_text(color = "black", size = 6, face = "plain"))+
   theme_bw()
-ggsave("figure/figure5_sum_concf.pdf", width = 17, height = 37, units = "cm", device = cairo_pdf) 
 
 # conclusion: the bacteria only got elliminited under 1100 mg dosage
 
@@ -413,23 +423,4 @@ for (j in 1:length(unique(alldata_sp_sum$type)) ) {
   
 }
 
-# tte_data_all[[4]]
-# continuous infusion-dose = 1100mg-Decreasing\ngradient
-# 57.8 h, 3469 min
-
-# tte_data_all[[5]]
-# continuous infusion-dose = 1100mg-Homogenous\ndistribution
-# 47.9 h, 2873 min
-
-# tte_data_all[[13]]
-# intermittent infusion-dose = 1100mg-Decreasing\ngradient
-# 31.4 h, 1883 min
-
-# tte_data_all[[14]]
-# intermittent infusion-dose = 1100mg-Homogenous\ndistribution
-# 7.98 h, 479 min
-
-# tte_data_all[[15]]
-# intermittent infusion-dose = 1100mg-Increasing\ngradient
-# 43.9 h, 2634 min
 save(file = "result/f5_tte.Rdata", tte_data_all)

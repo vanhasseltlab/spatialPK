@@ -18,6 +18,7 @@ library(rxode2)
 ##  ~ 1 - Source files   ----
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # function
+source("functions/get_D_coeff.R") ## get the diffusion coefficient
 source("functions/pde.R") ## PDE function (elimination)
 
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -142,26 +143,6 @@ pRatio <- ggplot(dat.pk.mucus.tp, aes(TIME/60, DEPTH, fill = Ratio)) +
   facet_grid(cols = vars(loc)) 
 pRatio
 
-p_blank <- ggplot() +
-  theme_void() +
-  theme(plot.margin = margin(0, 0, 0, 0))
-
-figure2_1 <- ggarrange(PlasmaPK,p_blank, 
-                     labels = c("A",""),
-                     nrow = 1, ncol = 2, 
-                     widths = c(7.5, 1.1))
-
-figure2_2 <- ggarrange(pCon_f,pRatio,
-                     labels = c("B","C"),
-                     nrow = 2, ncol = 1)
-
-figure2 <- ggarrange(figure2_1, figure2_2,
-                     # labels = c("A","", "B","C"),
-                     nrow = 2, ncol = 1, 
-                     heights=c(7.5, 16.8))
-figure2
-ggsave("figure/figure2.pdf", plot = figure2, width = 14, height = 14, units = "cm", device = cairo_pdf) 
-ggsave("figure/figure2.tiff", plot = figure2, width = 14, height = 14, units = "cm",dpi=600)
 save(file = "result/f2_spatialPK.Rdata", dat.pk.mucus.tp)
 
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -175,12 +156,15 @@ save(file = "result/f2_spatialPK.Rdata", dat.pk.mucus.tp)
 str(dat.pk.mucus.tp)
 input_data <- dat.pk.mucus.tp[-1,]
 
-# calculate the CV for each time
-# cv_x <- (sd_x / mean_x) * 100
 
 input_data <- input_data %>%
   group_by(TIME) %>%
   summarise(CV = 100*sd(Conc_F,na.rm = TRUE)/mean(Conc_F,na.rm = TRUE))
+
+# numerical analysis
+# 171.0%, 0.02 hour, 1st peak
+# 32.7%, 8.23 hour, 2nd peak
+# 30.4%, 16.20 hour, 3rd peak
 
 # plot the CV over time
 CV_plot <- input_data %>% 
@@ -189,7 +173,6 @@ CV_plot <- input_data %>%
   geom_line(aes(TIME/60, CV)) +
   scale_x_continuous(name = "Time (hour)", breaks = c(0:100)*4) +
   scale_y_continuous(name = "Coefficient \nof variation (%)") +
-  #labs(fill = "Plasma concentration") +
   theme_bw() +
   theme(text = element_text(family = "sans", color = "black", size = 12),
         axis.text = element_text(family = "sans", color = "black"),
@@ -197,20 +180,13 @@ CV_plot <- input_data %>%
         legend.title = element_text(size = 10),
         legend.key.width = unit(0.01, "npc"),
         strip.text = element_text(color = "black", size = 10, face = "plain"))+
-  annotate('text', x = 3.3, y = 133, label = '145%, 0.02 hour',size = 8/.pt) +
-  annotate('text', x = 11.5, y =33, label = '26.7%, 8.18 hour',size = 8/.pt) +
-  annotate('text', x = 19.8, y =33, label = '24.7%, 16.20 hour',size = 8/.pt) +
+  annotate('text', x = 3.3, y = 133, label = '171.0%, 0.02 hour',size = 8/.pt) +
+  annotate('text', x = 11.5, y =33, label = '32.7%, 8.23 hour',size = 8/.pt) +
+  annotate('text', x = 19.8, y =33, label = '30.4%, 16.20 hour',size = 8/.pt) +
   facet_grid(cols = vars(loc)) 
 
-
 CV_plot
-ggsave("figure/figure2_cv.pdf", plot = CV_plot, width = 9, height = 7, units = "cm") 
-ggsave("figure/figure2_cv.tiff", plot = CV_plot, width = 9, height = 7, units = "cm",dpi=600)
 
-# numerical analysis
-# 145, 1st peak, 0.02 hour
-# 26.7, 2nd peak, 8.18 hour
-# 24.7, 3rd peak, 16.20 hour
 
 p_blank <- ggplot() +
   theme_void() +
@@ -221,16 +197,17 @@ figure2_1 <- ggarrange(PlasmaPK,p_blank,
                        nrow = 1, ncol = 2, 
                        widths = c(7.5, 1.1))
 
+figure2_23 <- ggarrange(pCon_f,pRatio,
+                       labels = c("B","C"),
+                       nrow = 2, ncol = 1)
+
 figure2_4 <- ggarrange(CV_plot,p_blank, 
                        labels = c("D",""),
                        nrow = 1, ncol = 2, 
                        widths = c(7.5, 0.8))
 
-figure2_4figs <- ggarrange(figure2_1, figure2_2,figure2_4,
-                     # labels = c("A","", "B","C"),
+figure2_4figs <- ggarrange(figure2_1, figure2_23,figure2_4,
                      nrow = 3, ncol = 1, 
                      heights=c(7.5, 16.8, 7.5))
 figure2_4figs
-ggsave("figure/figure2_4figs.pdf", plot = figure2_4figs, width = 14, height = 18, units = "cm", device = cairo_pdf) 
-ggsave("figure/figure2_4figs.tiff", plot = figure2_4figs, width = 14, height = 18, units = "cm",dpi=600)
        

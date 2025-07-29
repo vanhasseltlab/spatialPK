@@ -1,31 +1,29 @@
 # PDE solved by finite difference method
 # modified by Yuchen Guo
 # DATE 26/06/2025
-# Main updates: enhance readibility
+# Main addition: comparison with the thin source and infinite source
 
-pde <- function(db.pk, coef.diff, kon, koff, Tmucin, dt, span.t, dx, span.x, clr, MW=500) {
+pde <- function(db.pk, coef.diff, kon, koff, Tmucin, dt, span.t, dx, span.x, clr, MW=500, source ="infinite") {
   require(dplyr)
   require(tibble)
   
-  # sanity check ----
-  # db.pk = rep(100, 4321) # plamsa conc, mg/L, per minite
+  # # # sanity check ----
+  # db.pk = 100 # plamsa conc, mg/L, per minite
   # coef.diff =104 # #um^2/s
   # kon = 100 # binding rate /(M*sec)
   # koff = 0.1 # unbinding rate /sec
   # Tmucin = 2e-5 # concentration of total mucin mol/L
-  # dt = 1 #  s, # adjust to meet the calculation criterion
+  # dt = 0.2 #  s, # adjust to meet the calculation criterion
   # span.t = 24*3 # observation time span in hours
-  # dx = 10 # step size depth in um
+  # dx = 20 # step size depth in um
   # span.x = 500 # observation depth span in um
   # clr = 0 # elimination rate in 1/sec
   # MW = 500 # molecular weight (g/mol), to calculate the concentration with mol/L for binding kinetics
+  # source = "thin" # if character("infinite"/"thin"), specify the source to be either "thin" or "infinite"; if numeric, specify the volume ratio of donor-receiver compartments
   
   Lnode <- span.x/dx
   Tnode <- span.t*60*60/dt
   
-  if (length(db.pk) < span.t * 60) {
-    stop("Error: length of db.pk is shorter than required number of time steps (span.t * 60).")
-  }
   
   if (coef.diff * dt / dx ^ 2 > 0.5) {
     stop("stability criterion unmet\n", coef.diff * dt / dx ^ 2)
@@ -34,10 +32,10 @@ pde <- function(db.pk, coef.diff, kon, koff, Tmucin, dt, span.t, dx, span.x, clr
   # Initialization ----
   A <- rep(0, Lnode + 1)                   # free drug concentration
   B <- rep(0, Lnode + 1)                   # bound drug concentration
+  A[1] <- db.pk
   An <- rep(NA_real_, Lnode)
   Bn <- rep(NA_real_, Lnode)
   df_C <- matrix(0, ncol = 4, nrow = 0)    # results storage
-  k <- 2                                   # db.pk index (starts at time 0)
   
   # Coefficients ----
   a <- ((coef.diff * dt) / dx ^ 2)
@@ -47,8 +45,12 @@ pde <- function(db.pk, coef.diff, kon, koff, Tmucin, dt, span.t, dx, span.x, clr
   e <- koff
   f <- clr
   
+  # boundary condition ----
+  
   # Time loop ----
   for (i in 1:Tnode) {
+    
+    
     if (i %% (60/dt) == 0) { 
       df_C_i <- matrix(data = c(rep(i/(60/dt), Lnode+1),
                                 seq(from = 0, by = dx, length.out = Lnode+1),
@@ -56,28 +58,28 @@ pde <- function(db.pk, coef.diff, kon, koff, Tmucin, dt, span.t, dx, span.x, clr
                                 B), ncol = 4)
       
       df_C <- rbind(df_C, df_C_i)
-      k <- k + 1
-      A[1] <- db.pk[k]
-    } else if (k < span.t * 60) {
-      A[1] <- db.pk[k]
+      
     } 
     
-    Fmucin <- max(Tmucin-(B[1]*0.001/MW), 0)
-    Bn[1] <- d*Fmucin*A[1]*dt - e*B[1]*dt + B[1] - f*B[1]*dt 
-    # Bn[1] <- d*(Tmucin-(B[1]*0.001/MW))*A[1]*dt - e*B[1]*dt + B[1] - f*B[1]*dt 
-    B[1] <- Bn[1]
-    # B[1] <- max(Bn[1], 0)  # prevent negative concentration
+    if(source == "infinite"){
+      # infinite source
+      A[1] <- db.pk
+    } else if (source == "thin") { # thin source
+      A[1] <- (1-a)*A[1] + c*A[2] - d*(Tmucin-(B[1]*0.001/MW))*A[1]*dt + e*B[1]*dt - f*A[1]*dt
+    } 
+
+    
+    if(is.na(as.numeric(source))){
+      Bn[1] <- d*(Tmucin-(B[1]*0.001/MW))*A[1]*dt - e*B[1]*dt + B[1] - f*B[1]*dt 
+      B[1] <- Bn[1] 
+    } 
+
     
     for (j in 2:Lnode) {
-      Fmucin <- max(Tmucin-(B[j]*0.001/MW), 0)
-      
-      An[j] <- a*A[j-1] + b*A[j] + c*A[j+1] - d*Fmucin*A[j]*dt + e*B[j]*dt - f*A[j]*dt
-      Bn[j] <- d*Fmucin*A[j]*dt - e*B[j]*dt + B[j] - f*B[j]*dt 
+      An[j] <- a*A[j-1] + b*A[j] + c*A[j+1] - d*(Tmucin-(B[j]*0.001/MW))*A[j]*dt + e*B[j]*dt - f*A[j]*dt
+      Bn[j] <- d*(Tmucin-(B[j]*0.001/MW))*A[j]*dt - e*B[j]*dt + B[j] - f*B[j]*dt 
       A[j] <- An[j]
       B[j] <- Bn[j]
-      # Apply updates and limit to physical values
-      # A[j] <- max(An[j], 0)
-      # B[j] <- max(Bn[j], 0)
     }
     A[Lnode+1] <- A[Lnode]
     B[Lnode+1] <- B[Lnode]

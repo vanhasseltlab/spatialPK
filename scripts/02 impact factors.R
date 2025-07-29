@@ -1,6 +1,6 @@
 ######################################################################
 ### The script is used to investigate the impact of relevant factors  ----
-# y.guo@lacdr.leidenuniv.nl - March 2024
+# y.guo@lacdr.leidenuniv.nl - July 2025
 ######################################################################
 rm(list = ls(all = TRUE))
 
@@ -24,21 +24,24 @@ source("functions/pde.R") ## PDE function (elimination)
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ##  ~ 2 - Group the impact factors   ----
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-# No.1 plasma halflives [outside the loop]
+# No.1 plasma halflives 
 halflife <- c(3, 6, 12, 24) # unit: hour
 
-# No.2 molecular size [inside the loop]
+# No.2 molecular size 
 radius <- c(1, 5, 20, 50) # unit: nm
+# https://www.fidabio.com/molecular-weight-to-size-protein-radius-calculator
+# weight <- c(500, 153000, 6020000, 68058000)
+weight <- c(500, 150000, 1000000, 10000000)
 
-# No.3 binding affinity [inside the loop]
-ka <- c(10, 100, 1000, 10000) # unit: 1/M
-kon <- c(1, 10, 100, 1000)
+# No.3 binding affinity 
+ka <- c(100, 1000, 10000, 100000) # unit: 1/M
+kon <- c(10, 100, 1000, 10000)
 koff = 0.1
 
-# No.4 mucin concentrations [inside the loop]
-Mc <- c(1e-6, 5e-6, 1e-5, 5e-5) # unit: M
+# No.4 mucin concentrations 
+Mc <- c(5e-6, 1e-5, 5e-5, 1e-4) # unit: M
 
-# No.5 muco-cilliary clearance [inside the loop]
+# No.5 muco-cilliary clearance 
 rate <- c(0, 1e-6, 1e-5, 1e-4) # unit: 1/s, 5e-06, 1e-05, 5e-05 update: 1e-06 1e-05 1e-041e-05
 rateh <- rate * 3600 # unit: 1/h
 
@@ -74,12 +77,11 @@ for (i in 1:length(clearance)) {
        amt = amt,
        cmt = 1,
        dur = dur*60,
-       ii = ii*60,  # ii= ii*60 for small molecule, ii=0 for antibody
-       addl = 72/ii - 1) %>% # addl = 72/ii - 1 for small molecule, addl =0 for antibody ; #previously observe to = 72*60, now change it to 24hour
+       ii = ii*60, 
+       addl = 72/ii - 1) %>% 
     # sampling events
     et(seq(from = 0, to = 72*60, by = 1)) %>% 
     as_tibble()
-  
   
   ## Simulate
   set.seed(2021)
@@ -92,8 +94,6 @@ for (i in 1:length(clearance)) {
   dat.pk.plasma_clct[[i]] <- dat.pk.plasma
 }
 
-# There are 4 dataframes in the list of dat.pk.plasma_clct
-# the first one (dat.pk.plasma_clct[[1]]) is used for the impact analysis of other factors
 
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ##  ~ 4 - Parameter list  ----
@@ -122,21 +122,6 @@ num_rows <- 20
 para <- as.data.frame(matrix(rep(values, num_rows), nrow = num_rows, byrow = TRUE))
 colnames(para) <- col_names
 
-
-#Function to calculate the diffusion coefficients with modified version
-k_value = 1.380649e-23
-t_value = 273 + 37
-nu1 = 3 * 0.001 
-nu2 = 62*10^3 * 0.001 
-Diffusion_coeff <- function(r){
-    if (r <= 1){
-      D <- 1e+21*k_value*t_value/(4*pi*nu1*r)
-    }
-    else if (r > 1){
-      D <- 1e+21*k_value*t_value/(6*pi*nu1*r)
-    }
-    return(D)
-}
 
 # Efficiently populate parameter data using indexing
 para[1:4, c("halflife", "feature")] <- cbind(c(1:4), "Plasma\n Half-life") # use index because the change is in the plasma PK profile
@@ -186,7 +171,7 @@ for (k in 1:nrow(para)) {
     dat.pk.mucus <- pde(
       db.pk = dat.pk.plasma_ok$Con1,
       # plasma PK
-      coef.diff = Diffusion_coeff(r_ok),
+      coef.diff = Diffusion_coeff(r_ok,vis(Mc_ok)),
       # diffusion coefficient um^2/sec,113 for 1nm, 15.13 for 5nm
       kon = kon_ok ,
       # binding rate /(M*sec)
@@ -210,11 +195,11 @@ for (k in 1:nrow(para)) {
       rename(Conc_F = CONC_FREE) %>% 
       rename(Conc_B = CONC_BIND) %>%
       left_join(dat.pk.plasma, by = c("TIME" = "time")) %>% 
-      mutate(feature = para[k,6]) %>%  # outcome
-      mutate(description = para[k,9]) %>%  # outcome
-      mutate(Ratio = Conc_F/Con1) %>%  # outcome
-      mutate(ConcTT = Conc_F+Conc_B)  %>%  # outcome
-      mutate(BRatio = Conc_B/ConcTT)  %>%  # outcome
+      mutate(feature = para[k,6]) %>%  
+      mutate(description = para[k,9]) %>% 
+      mutate(Ratio = Conc_F/Con1) %>% 
+      mutate(ConcTT = Conc_F+Conc_B)  %>% 
+      mutate(BRatio = Conc_B/ConcTT)  %>% 
       mutate(tRatio = Conc_B*0.01)
     
     listdata[[k]] <- dat.pk.mucus.ok
@@ -279,19 +264,6 @@ for (j in 1:5) {
   plot_list[[j]] <- pCon_f
 }
 
-figure3 <-ggarrange(plot_list[[2]], 
-                       plot_list[[1]],
-                    plot_list[[3]],
-                    plot_list[[4]], 
-                    plot_list[[5]],
-                    labels = c("A", "B", "C","D","E"),
-                    ncol = 1, nrow = 5,
-                    font.label = list(size = 12))
-figure3
-
-# save the plot
-ggsave("figure/figure3_202502_n.pdf", plot = figure3, width = 17, height = 21, units = "cm", device = cairo_pdf) 
-ggsave("figure/figure3_202502_n.tiff", plot = figure3, width = 17, height = 21, units = "cm",dpi=600)
 
 # save the data
 save(file = "result/f3_impactFactor.Rdata", listdata)
@@ -319,127 +291,37 @@ factor_AUC$type <- factor(factor_AUC$type,
                                  "Mucin concentration",
                                  "Muco-ciliary clearance"))
 factor_AUC$Num <- rep(1:4,5)
+factor_AUC <- left_join(factor_AUC,plasma_AUC, by = "halflife") %>% 
+  mutate(Ratio_AUCf_plasma = AUCf/AUC_plasma,
+         Ratio_AUCb_plasma = AUCb/AUC_plasma)
 
-# V1
-p1 <- ggplot(factor_AUC %>% filter(type == "Molecule/particle size"), 
-             aes(y = AUCf, x = des)) + 
-  geom_bar(stat = "identity",position = "dodge") +
-  scale_x_discrete() +
-  scale_y_continuous(name = "AUCf (mg*h/L)",limits = c(0,1500)) +
-  geom_text(aes(label = AUCf), hjust=0.5, vjust=-0.5, position = position_dodge(.9),size = 2.75)+ # make the lable right above
-  facet_grid(~type) +
-  theme_bw()+
-  theme(axis.title.x=element_blank(),
-        axis.title.y=element_text(size=9),
-        axis.text.x = element_text(family = "sans", color = "black",size = 8, angle = 90),
-        axis.text.y = element_text(family = "sans", color = "black",size = 8),
-        legend.text = element_text(size = 6),
-        legend.title = element_text(size = 7),
-        legend.key.width = unit(0.02, "npc"),
-        legend.key.height = unit(0.3, "cm"),
-        strip.text = element_text(color = "black", size = 9, face = "plain"))
 
-# V2
-p2 <- ggplot(factor_AUC %>% filter(type == "Binding affinity"), 
-             aes(y = AUCf, x = des)) + 
-  geom_bar(stat = "identity",position = "dodge") +
-  scale_x_discrete() +
-  scale_y_continuous(name = "AUCf (mg*h/L)",limits = c(0,1500)) +
-  geom_text(aes(label = AUCf), hjust=0.5, vjust=-0.5, position = position_dodge(.9),size = 2.75)+ # make the lable right above
-  facet_grid(~type) +
-  theme_bw()+
-  theme(axis.title.x=element_blank(),
-        axis.title.y=element_text(size=9),
-        axis.text.x = element_text(family = "sans", color = "black",size = 8, angle = 90),
-        axis.text.y = element_text(family = "sans", color = "black",size = 8),
-        legend.text = element_text(size = 6),
-        legend.title = element_text(size = 7),
-        legend.key.width = unit(0.02, "npc"),
-        legend.key.height = unit(0.3, "cm"),
-        strip.text = element_text(color = "black", size = 9, face = "plain"))
-
-p3 <- ggplot(factor_AUC %>% filter(type == "Plasma half-life"), 
-             aes(y = AUCf, x = des)) + 
-  geom_bar(stat = "identity",position = "dodge") +
-  scale_x_discrete() +
-  scale_y_continuous(name = "AUCf (mg*h/L)",limits = c(0,1500)) +
-  geom_text(aes(label = AUCf), hjust=0.5, vjust=-0.5, position = position_dodge(.9),size = 2.75)+ # make the lable right above
-  facet_grid(~type) +
-  theme_bw()+
-  theme(axis.title.x=element_blank(),
-        axis.title.y=element_text(size=9),
-        axis.text.x = element_text(family = "sans", color = "black",size = 8, angle = 90),
-        axis.text.y = element_text(family = "sans", color = "black",size = 8),
-        legend.text = element_text(size = 6),
-        legend.title = element_text(size = 7),
-        legend.key.width = unit(0.02, "npc"),
-        legend.key.height = unit(0.3, "cm"),
-        strip.text = element_text(color = "black", size = 9, face = "plain"))
-
-p4 <- ggplot(factor_AUC %>% filter(type == "Mucin concentration"), 
-             aes(y = AUCf, x = des)) + 
-  geom_bar(stat = "identity",position = "dodge") +
-  scale_x_discrete() +
-  scale_y_continuous(name = "AUCf (mg*h/L)",limits = c(0,1500)) +
-  geom_text(aes(label = AUCf), hjust=0.5, vjust=-0.5, position = position_dodge(.9),size = 2.75)+ # make the lable right above
-  facet_grid(~type) +
-  theme_bw()+
-  theme(axis.title.x=element_blank(),
-        axis.title.y=element_text(size=9),
-        axis.text.x = element_text(family = "sans", color = "black",size = 8, angle = 90),
-        axis.text.y = element_text(family = "sans", color = "black",size = 8),
-        legend.text = element_text(size = 6),
-        legend.title = element_text(size = 7),
-        legend.key.width = unit(0.02, "npc"),
-        legend.key.height = unit(0.3, "cm"),
-        strip.text = element_text(color = "black", size = 9, face = "plain"))
-
-p5 <- ggplot(factor_AUC %>% filter(type == "Muco-ciliary clearance"), 
-             aes(y = AUCf, x = des)) + 
-  geom_bar(stat = "identity",position = "dodge") +
-  scale_x_discrete() +
-  scale_y_continuous(name = "AUCf (mg*h/L)",limits = c(0,1500)) +
-  geom_text(aes(label = AUCf), hjust=0.5, vjust=-0.5, position = position_dodge(.9),size = 2.75)+ # make the lable right above
-  facet_grid(~type) +
-  theme_bw()+
-  theme(axis.title.x=element_blank(),
-        axis.title.y=element_text(size=9),
-        axis.text.x = element_text(family = "sans", color = "black",size = 8, angle = 90),
-        axis.text.y = element_text(family = "sans", color = "black",size = 8),
-        legend.text = element_text(size = 6),
-        legend.title = element_text(size = 7),
-        legend.key.width = unit(0.02, "npc"),
-        legend.key.height = unit(0.3, "cm"),
-        strip.text = element_text(color = "black", size = 9, face = "plain"))
-
-# Remove the y-axis for the 2nd plot - p2 then merge 2 plots
-AUC_plot <- cowplot::plot_grid(p1, 
-                   p3+ 
-                     theme(axis.text.y = element_blank(),
-                           axis.line.y = element_blank(),
-                           axis.title.y= element_blank(),
-                           axis.ticks.y= element_blank()),
-                   p2+ 
-                     theme(axis.text.y = element_blank(),
-                           axis.line.y = element_blank(),
-                           axis.title.y= element_blank(),
-                           axis.ticks.y= element_blank()),
-                   p4+ 
-                     theme(axis.text.y = element_blank(),
-                           axis.line.y = element_blank(),
-                           axis.title.y= element_blank(),
-                           axis.ticks.y= element_blank()),
-                   p5+ 
-                     theme(axis.text.y = element_blank(),
-                           axis.line.y = element_blank(),
-                           axis.title.y= element_blank(),
-                           axis.ticks.y= element_blank()),
-                   nrow = 1,
-                   rel_widths = c(1.25,1,1,1,1),
-                   align = 'h', axis = 'tb')
-AUC_plot
-ggsave("figure/figure3_auc_202502.pdf", width = 25, height = 10, units = "cm", device = cairo_pdf) 
-ggsave("figure/figure3_auc_202502.tiff", width = 25, height = 10, units = "cm",dpi=600)
+AUC_plot_full <- factor_AUC %>% 
+  filter(type != "Molecule/particle size") %>% 
+  ggplot( aes(y = AUCf, x = des)) +
+  geom_bar(stat = "identity") +
+  geom_text(
+    aes(label = round(AUCf, 3)), vjust = -0.5,size = 2.75) +
+  facet_wrap(~type, nrow = 1, scales = "free_x") +
+  scale_y_continuous(name = "AUCf (mg*h/L)", limits = c(0, 1500)) + # to replace # AUCf (mg*h/L)
+  theme_bw() +
+  theme(text = element_text(family = "sans", color = "black", size = 10),
+        axis.title =  element_text(family = "sans", color = "black", size = 10),
+        axis.text = element_text(family = "sans", color = "black", size = 9),
+        axis.title.x = element_blank(),
+        # text = element_text(family = "sans", color = "black", size = 10),
+        # axis.title.x = element_blank(),
+        # axis.title.y = element_text(size = 9),
+        axis.text.x = element_text(
+          size = 8,
+          angle = 90,
+          vjust = 0.5,
+          hjust = 1
+        ),
+        strip.text = element_text(size = 9, face = "plain"),
+        panel.spacing.x = unit(0.8, "lines") # Adjust space between panels
+  )
+AUC_plot_full
 
 ##~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 ##  ~ 8 - Numeric analysis of CV  ----
@@ -532,63 +414,3 @@ CVf_plot <- cowplot::plot_grid(plot_list_cvf_legend[[1]],
                    rel_widths = c(1.15,1,1,1,1),
                    align = 'h', axis = 'tb')
 CVf_plot
-# merge the plot
-figure3_AUCCV <- ggarrange(AUC_plot, CVf_plot,
-                        labels = c("A","B"),
-                        nrow = 2, ncol = 1, 
-                        widths = 1, heights = c(1.2,1))
-figure3_AUCCV
-ggsave("figure3_AUCCV_202502.pdf", plot = figure3_AUCCV, width = 23, height = 18, units = "cm", device = cairo_pdf)
-ggsave("figure/figure3_AUCCV_202502.tiff", plot = figure3_AUCCV, width = 23, height = 18, units = "cm", dpi = 600)
-
-
-peak_data <- list()
-
-for (j in 1: length(unique(alldata_cv$description))) {
-  peak <- data_frame()
-  input_cv <- alldata_cv[alldata_cv$description == unique(alldata_cv$description)[j],]
-  d = unique(input_cv$description)
-  
-  for(i in 2 : (nrow(input_cv)-1)) { # 4320 rows (minutes, = 72 hours) for each subset data
-    
-    a = input_cv$CV_F[i - 1]
-    b = input_cv$CV_F[i]
-    c = input_cv$CV_F[i + 1]
-    
-    if (isTRUE(b > a & b > c)){
-      peak_i <- data_frame(Time=i/60,time = i,Peak = b, des = d)
-      peak <- rbind(peak,peak_i) 
-    }
-    
-    i = i + 1
-  }
-  
-  peak_data[[j]] <- peak
-  
-}
-
-# save the data
-save(file = "result/f3_cv.Rdata", peak_data)
-
-# halflife ----
-# after the 1st infusion (lower value is the stable value)
-# t1/2 = 3 h, 24.4
-# t1/2 = 6 h, 11.9
-# t1/2 = 12 h, 6.42
-# t1/2 = 24 h, 3.98
-
-# radius ----
-# after the 1st infusion
-# r = 1 nm, 23.8 ~26.1 | 24.4 
-# r = 5 nm, 46.6 ~ 52.3, 15.4~15.8 | 50.3
-# r = 20 nm, 58.7 ~31.9, 13.7~24.7 | 45.5
-# r = 50 nm, 91.5 ~ 28.7, 10.3~22.6 | 54.7
-
-# Binding ---
-# all: 24.1~26.6
-
-# Mucin ---
-# all: 24.1~24.8
-
-# Muco-clearance ----
-# all: 24.1~27.2
